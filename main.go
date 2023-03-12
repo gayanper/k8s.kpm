@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -16,13 +17,31 @@ func main() {
 		logger.Fatal("please install kubectl command.")
 	}
 
-	profile := "default"
+	var profile string
+	var printHelp bool
+
+	// process flags
+	flag.StringVar(&profile, "p", "default", "The profile name in configuration file")
+	flag.BoolVar(&printHelp, "h", false, "Print help")
+	flag.Parse()
+
+	if printHelp {
+		flag.PrintDefaults()
+		os.Exit(0)
+	}
 
 	config := config.Read("")
 	lock := make(chan os.Signal, 1)
 	signal.Notify(lock, syscall.SIGTERM)
 
-	procs := startAllPortMappings(config[profile])
+	p, exist := config[profile]
+
+	if !exist {
+		logger.Error("Profile with name [", profile, "] not found in the configuration file")
+		return
+	}
+
+	procs := startAllPortMappings(p)
 	logger.Info()
 	logger.Info("Port forwarding started for profile:", profile)
 	logger.Info()
