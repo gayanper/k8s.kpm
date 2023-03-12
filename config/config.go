@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"io/fs"
 	"log"
@@ -19,11 +20,20 @@ type Config struct {
 	Entries   []PortForwardEntry `json:"entries,omitempty"`
 }
 
-// Read the configuration file from the given path and parse it and return the configuration.
+type Profile struct {
+	Name          string `json:"name,omitempty"`
+	Configuration Config `json:"config,omitempty"`
+}
+
+type Profiles struct {
+	Profiles []Profile `json:"profiles,omitempty"`
+}
+
+// Read the configuration file from the given path and parse it and return the configured profiles.
 //
 // If the path is empty then then read the default configuration in the current user home directory.
 // The default file location is ~/.kpm/config,json
-func Read(path string) Config {
+func Read(path string) map[string]Profile {
 	if path == "" {
 		var home, err = os.UserHomeDir()
 		if err != nil {
@@ -55,27 +65,46 @@ func Read(path string) Config {
 		log.Fatal(de)
 	}
 
-	var config Config
+	var config Profiles
 	ue := json.Unmarshal(data, &config)
 	if ue != nil {
 		log.Fatal(de)
 	}
-	return config
+
+	result := make(map[string]Profile)
+	for _, p := range config.Profiles {
+		result[p.Name] = p
+	}
+
+	return result
 }
 
 func createDefaultConfig(path string) {
-	config := 
-	`{
-		"namespace" : "default",
-		"entries" : [
+	config :=
+		`{
+		"profiles" : [
 			{
-				"serviceName" : "svc/changeme",
-				"servicePort" : 80,
-				"localPort" : 8080
+				"name" : "default",
+				"config" : 	{
+					"namespace" : "default",
+					"entries" : [
+						{
+							"serviceName" : "svc/changeme",
+							"servicePort" : 80,
+							"localPort" : 8080
+						}
+					]
+				}
 			}
 		]
 	}`
-	x := os.WriteFile(path, []byte(config), fs.ModePerm)
+	var prettyString bytes.Buffer
+	ie := json.Indent(&prettyString, []byte(config), "", "  ")
+	if ie != nil {
+		log.Fatal(ie)
+	}
+
+	x := os.WriteFile(path, prettyString.Bytes(), 0644)
 	if x != nil {
 		log.Println("failed to create default config file at ", path)
 		log.Fatal(x)

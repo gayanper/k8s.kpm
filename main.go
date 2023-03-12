@@ -2,26 +2,32 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"os/signal"
 	"syscall"
 
 	"github.com/gayanper/kpm/config"
+	"github.com/gayanper/kpm/logger"
 )
 
 func main() {
 	if !hasKubeCtl() {
-		log.Fatalln("please install kubectl command.")
+		logger.Fatal("please install kubectl command.")
 	}
+
+	profile := "default"
 
 	config := config.Read("")
 	lock := make(chan os.Signal, 1)
 	signal.Notify(lock, syscall.SIGTERM)
 
-	procs := startAllPortMappings(config)
-	log.Println("press Control+C to close down all port forwardings and exit.")
+	procs := startAllPortMappings(config[profile])
+	logger.Info()
+	logger.Info("Port forwarding started for profile:", profile)
+	logger.Info()
+	logger.Info("Press Control+C to close down all port forwardings and exit.")
+	logger.Info()
 
 	<-lock // wait till we receive sigterm
 
@@ -36,22 +42,17 @@ func killAllPortMappings(procs []*exec.Cmd) {
 		pid := proc.Process.Pid
 		e := proc.Process.Signal(syscall.SIGTERM)
 		if e != nil {
-			log.Println("failed to stop kubectl process [pid: ", pid, "].")
+			logger.Error("failed to stop kubectl process [pid: ", pid, "].")
 		}
 	}
 }
 
-func startAllPortMappings(config config.Config) []*exec.Cmd {
+func startAllPortMappings(profile config.Profile) []*exec.Cmd {
+	config := profile.Configuration
 	procs := make([]*exec.Cmd, len(config.Entries))
 	for index, entry := range config.Entries {
-		kcmd := exec.Command("kubectl", "-n", config.Namespace, "port-forward", entry.ServiceName,
-			fmt.Sprint(entry.LocalPort, ":", entry.ServicePort))
-
-		if e := kcmd.Start(); e != nil {
-			procs[index] = nil
-		} else {
-			procs[index] = kcmd
-		}
+		procs[index] = runCommand("kubectl", "-n", config.Namespace, "port-forward", entry.ServiceName,
+		fmt.Sprint(entry.LocalPort, ":", entry.ServicePort))
 	}
 	return procs
 }
@@ -59,4 +60,20 @@ func startAllPortMappings(config config.Config) []*exec.Cmd {
 func hasKubeCtl() bool {
 	_, err := exec.LookPath("kubectl")
 	return err == nil
+}
+
+func runCommand(command string, args ...string) *exec.Cmd {
+	c := exec.Command(command, args...)
+
+	go func (command *exec.Cmd)  {
+		command.Stdout = os.Stdout
+		command.Stderr = os.Stderr
+
+		err := command.Run()
+		if err != nil {
+			logger.Error(err)
+		}
+	}(c)
+
+	return c
 }
