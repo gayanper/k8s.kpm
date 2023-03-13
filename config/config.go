@@ -29,31 +29,28 @@ type Profiles struct {
 	Profiles []Profile `json:"profiles,omitempty"`
 }
 
-// Read the configuration file from the given path and parse it and return the configured profiles.
+// Read the configuration file from the configuration path and parse it and return the configured profiles.
 //
-// If the path is empty then then read the default configuration in the current user home directory.
 // The default file location is ~/.kpm/config,json
-func Read(path string) map[string]Profile {
-	if path == "" {
-		var home, err = os.UserHomeDir()
-		if err != nil {
-			log.Fatal(err)
-		}
-		path = filepath.Join(home, ".kpm", "config.json")
-		if !exist(path) {
-			configDirPath := filepath.Join(home, ".kpm")
-			if !exist(configDirPath) {
-				de := os.Mkdir(configDirPath, fs.ModePerm)
-				if de != nil {
-					log.Fatal(de)
-				}
+func Read() map[string]Profile {
+	var home, err = os.UserHomeDir()
+	if err != nil {
+		log.Fatal(err)
+	}
+	path := filepath.Join(home, ".kpm", "config.json")
+	if !exist(path) {
+		configDirPath := filepath.Join(home, ".kpm")
+		if !exist(configDirPath) {
+			de := os.Mkdir(configDirPath, fs.ModePerm)
+			if de != nil {
+				log.Fatal(de)
 			}
-
-			createDefaultConfig(path)
-			log.Println("new default configuration file is created at ", path)
-			log.Println("please update the file before running kpm again.")
-			os.Exit(1)
 		}
+
+		createDefaultConfig(path)
+		log.Println("new default configuration file is created at ", path)
+		log.Println("please update the file before running kpm again.")
+		os.Exit(1)
 	}
 
 	if !exist(path) {

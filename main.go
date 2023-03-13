@@ -10,6 +10,7 @@ import (
 
 	"github.com/gayanper/kpm/config"
 	"github.com/gayanper/kpm/logger"
+	"github.com/posener/complete"
 )
 
 func main() {
@@ -19,18 +20,52 @@ func main() {
 
 	var profile string
 	var printHelp bool
+	var listProfiles bool
 
 	// process flags
 	flag.StringVar(&profile, "p", "default", "The profile name in configuration file")
 	flag.BoolVar(&printHelp, "h", false, "Print help")
+	flag.BoolVar(&listProfiles, "l", true, "List profiles from configuration")
+
+	config := config.Read()
+
+	// add completions
+	profileNames := func(a complete.Args) []string {
+		result := make([]string, len(config))
+		i := 0
+		for _, p := range config {
+			result[i] = p.Name
+			i++
+		}
+		return result
+	}
+
+	cmp := complete.New("kpm", complete.Command{Flags: complete.Flags{"-p": complete.PredictFunc(profileNames),
+		"-l": complete.PredictNothing, "-h": complete.PredictNothing}})
+	cmp.CLI.InstallName = "complete"
+	cmp.CLI.UninstallName = "uncomplete"
+	cmp.AddFlags(nil)
+
 	flag.Parse()
+
+	if cmp.Complete() {
+		return
+	}
 
 	if printHelp {
 		flag.PrintDefaults()
-		os.Exit(0)
+		return
 	}
 
-	config := config.Read("")
+	if listProfiles {
+		for _, p := range config {
+			fmt.Println()
+			fmt.Println(p.Name)
+			fmt.Println()
+		}
+		return
+	}
+
 	lock := make(chan os.Signal, 1)
 	signal.Notify(lock, syscall.SIGTERM)
 
@@ -71,7 +106,7 @@ func startAllPortMappings(profile config.Profile) []*exec.Cmd {
 	procs := make([]*exec.Cmd, len(config.Entries))
 	for index, entry := range config.Entries {
 		procs[index] = runCommand("kubectl", "-n", config.Namespace, "port-forward", entry.ServiceName,
-		fmt.Sprint(entry.LocalPort, ":", entry.ServicePort))
+			fmt.Sprint(entry.LocalPort, ":", entry.ServicePort))
 	}
 	return procs
 }
@@ -84,7 +119,7 @@ func hasKubeCtl() bool {
 func runCommand(command string, args ...string) *exec.Cmd {
 	c := exec.Command(command, args...)
 
-	go func (command *exec.Cmd)  {
+	go func(command *exec.Cmd) {
 		command.Stdout = os.Stdout
 		command.Stderr = os.Stderr
 
