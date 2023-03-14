@@ -25,7 +25,7 @@ func main() {
 	// process flags
 	flag.StringVar(&profile, "p", "default", "The profile name in configuration file")
 	flag.BoolVar(&printHelp, "h", false, "Print help")
-	flag.BoolVar(&listProfiles, "l", true, "List profiles from configuration")
+	flag.BoolVar(&listProfiles, "l", false, "List profiles from configuration")
 
 	config := config.Read()
 
