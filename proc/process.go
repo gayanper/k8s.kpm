@@ -3,10 +3,15 @@ package proc
 import (
 	"bufio"
 	"os/exec"
+	"regexp"
 	"syscall"
+	"time"
 
 	"github.com/gayanper/kpm/logger"
 )
+
+var K8S_CONNECTION_FAILURE_TEST *regexp.Regexp = regexp.MustCompile(".*dial tcp .* connect: connection refused")
+const CONNECTION_RETRY_INTERVAL = 5
 
 type RestartableProcess struct {
 	Command string
@@ -67,7 +72,7 @@ func (p RestartableProcess) Start() error {
 	go func (command *exec.Cmd, output chan bool)  {
 		scanner := bufio.NewScanner(stdErr)
 		for scanner.Scan() {
-			// if we read something and has not output then restart
+			// if we read something and has no output then restart
 			logger.Debug("STDERR:", scanner.Text())
 			hasOutput := false
 			select {
@@ -78,8 +83,15 @@ func (p RestartableProcess) Start() error {
 			if hasOutput {
 				p.Restart()
 			} else {
-				logger.Error(scanner.Text())
-				p.SendSigTerm()
+				message := scanner.Text()
+				if K8S_CONNECTION_FAILURE_TEST.MatchString(message) {
+					logger.Info("Couldn't connect to kubernetes server, will retry in", CONNECTION_RETRY_INTERVAL, "seconds")
+					time.Sleep(CONNECTION_RETRY_INTERVAL * time.Second)
+					p.Restart()
+				} else {
+					logger.Error(scanner.Text())
+					p.SendSigTerm()
+				}
 			}
 		}
 	}(cmd, outputChannel)

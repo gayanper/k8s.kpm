@@ -22,13 +22,13 @@ func main() {
 	var profile string
 	var printHelp bool
 	var listProfiles bool
-	var debug bool
+	var verbose bool
 
 	// process flags
 	flag.StringVar(&profile, "p", "default", "The profile name in configuration file")
 	flag.BoolVar(&printHelp, "h", false, "Print help")
 	flag.BoolVar(&listProfiles, "l", false, "List profiles from configuration")
-	flag.BoolVar(&debug, "v", false, "Verbose output like debug")
+	flag.BoolVar(&verbose, "v", false, "Verbose output like debug")
 
 	config := config.Read()
 
@@ -55,7 +55,7 @@ func main() {
 		return
 	}
 
-	logger.DEBUG = debug
+	logger.DEBUG = verbose
 
 	if printHelp {
 		flag.PrintDefaults()
