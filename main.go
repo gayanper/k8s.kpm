@@ -14,6 +14,8 @@ import (
 	"github.com/posener/complete"
 )
 
+var Statuses = map[bool]string{true: "Running", false: "Stopped/Restarting"}
+
 func main() {
 	if !hasKubeCtl() {
 		logger.Fatal("please install kubectl command.")
@@ -84,12 +86,20 @@ func main() {
 	logger.Info()
 	logger.Info("Port forwarding started for profile:", profile)
 	logger.Info()
+	printStatus(p, procs)
+	logger.Info()
 	logger.Info("Press Control+C to close down all port forwardings and exit.")
 	logger.Info()
 
 	<-lock // wait till we receive sigterm
 
 	killAllPortMappings(procs)
+}
+
+func printStatus(p config.Profile, procs []proc.RestartableProcess) {
+	for index, entry := range p.Configuration.Entries {
+		logger.Info(entry.ServiceName, " : ", entry.LocalPort, " : ", Statuses[procs[index].Running])
+	}
 }
 
 func killAllPortMappings(procs []proc.RestartableProcess) {
@@ -104,7 +114,9 @@ func startAllPortMappings(profile config.Profile) []proc.RestartableProcess {
 	for index, entry := range config.Entries {
 		arguments := []string{"-n", config.Namespace, "port-forward", entry.ServiceName,
 			fmt.Sprint(entry.LocalPort, ":", entry.ServicePort)}
-		procs[index] = proc.RestartableProcess{Command: "kubectl", Arguments: arguments}
+		procs[index] = proc.RestartableProcess{Command: "kubectl", Arguments: arguments, OnRestarted: func ()  {
+			printStatus(profile, procs)
+		}}
 		procs[index].Start()
 	}
 	return procs
