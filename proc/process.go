@@ -3,29 +3,32 @@ package proc
 import (
 	"bufio"
 	"os/exec"
-	"regexp"
 	"syscall"
 	"time"
 
 	"github.com/gayanper/kpm/logger"
 )
 
-var K8S_CONNECTION_FAILURE_TEST *regexp.Regexp = regexp.MustCompile(".*connection refused")
 const CONNECTION_RETRY_INTERVAL = 30
 const MAX_RETRIES = 10
 
-type RestartedCallback func ()
+type ProcessCallback func()
 
 type RestartableProcess struct {
-	Command string
-	Arguments []string
-	process *exec.Cmd
+	Command      string
+	Arguments    []string
+	process      *exec.Cmd
 	restartCount int16
-	Running bool
-	OnRestarted RestartedCallback
+	Running      bool
+	OnRestarted  ProcessCallback
+	OnStarted    ProcessCallback
 }
 
-func (p RestartableProcess) SendSigTerm() error {
+func Create(command string, arguments []string, onStarted ProcessCallback, onRestarted ProcessCallback) *RestartableProcess {
+	return &RestartableProcess{Command: command, Arguments: arguments, OnStarted: onStarted, OnRestarted: onRestarted, restartCount: 0}
+}
+
+func (p *RestartableProcess) SendSigTerm() error {
 	pid := p.process.Process.Pid
 	err := p.process.Process.Signal(syscall.SIGTERM)
 	if err != nil {
@@ -35,7 +38,7 @@ func (p RestartableProcess) SendSigTerm() error {
 	return nil
 }
 
-func (p RestartableProcess) Restart() {
+func (p *RestartableProcess) Restart() {
 	err := p.SendSigTerm()
 	if err == nil {
 		p.Start()
@@ -44,10 +47,9 @@ func (p RestartableProcess) Restart() {
 	}
 }
 
-func (p RestartableProcess) Start() error {
-	p.restartCount = 0
+func (p *RestartableProcess) Start() error {
 	p.Running = false
-	outputChannel := make(chan bool)
+	outputChannel := make(chan bool, 1)
 	cmd := exec.Command(p.Command, p.Arguments...)
 
 	logger.Debug("Starting ", cmd.String())
@@ -66,48 +68,45 @@ func (p RestartableProcess) Start() error {
 	p.process = cmd
 
 	// start listening for out's first line
-	go func (command *exec.Cmd, output chan bool)  {
+	go func(command *exec.Cmd, output chan bool) {
 		out := bufio.NewScanner(stdOut)
-		for out.Scan() {
+		if out.Scan() {
 			logger.Debug("STDOUT:", out.Text())
 			output <- true
 			p.Running = true
 			if p.restartCount > 0 && p.OnRestarted != nil {
 				p.OnRestarted()
+			} else if p.restartCount == 0 && p.OnStarted != nil {
+				p.OnStarted()
 			}
-			break
 		}
 	}(cmd, outputChannel)
-	
 
 	// start listening for errors
-	go func (command *exec.Cmd, output chan bool)  {
+	go func(command *exec.Cmd, output chan bool) {
 		scanner := bufio.NewScanner(stdErr)
-		for scanner.Scan() {
+		if scanner.Scan() {
 			p.Running = false
 			// if we read something and has no output then restart
 			logger.Debug("STDERR:", scanner.Text())
 			hasOutput := false
 			select {
-			case _, hasOutput = <- output:
+			case _, hasOutput = <-output:
 			default:
 			}
 			// This means we had a connection, but after a while we may lost it, so restart and see.
 			if hasOutput {
 				p.Restart()
 			} else {
-				message := scanner.Text()
-				if K8S_CONNECTION_FAILURE_TEST.MatchString(message) && p.restartCount <= MAX_RETRIES {
+				if p.restartCount <= MAX_RETRIES {
 					logger.Info("Couldn't connect to kubernetes server, will retry in", CONNECTION_RETRY_INTERVAL, "seconds")
 					time.Sleep(CONNECTION_RETRY_INTERVAL * time.Second)
 					p.restartCount += 1
 					p.Restart()
 				} else {
 					logger.Error(scanner.Text())
+					logger.Info("Giving up after max retries (", MAX_RETRIES, ") exceeded [", command, "]")
 					p.SendSigTerm()
-					if p.restartCount > MAX_RETRIES {
-						logger.Info("Giving up after max retries (", MAX_RETRIES, ") exceeded [", command, "]")
-					}
 				}
 			}
 		}

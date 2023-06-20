@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"github.com/gayanper/kpm/config"
@@ -14,7 +15,7 @@ import (
 	"github.com/posener/complete"
 )
 
-var Statuses = map[bool]string{true: "Running", false: "Stopped/Restarting"}
+var Statuses = map[bool]string{true: "Running", false: "Stopped"}
 
 func main() {
 	if !hasKubeCtl() {
@@ -57,7 +58,7 @@ func main() {
 		return
 	}
 
-	logger.DEBUG = verbose
+	logger.Init(verbose)
 
 	if printHelp {
 		flag.PrintDefaults()
@@ -82,6 +83,8 @@ func main() {
 		logger.Error("Profile with name [", profile, "] not found in the configuration file")
 		return
 	}
+	logger.Info("Port forwarding starting for profile:", profile)
+	logger.Info()
 	procs := startAllPortMappings(p)
 	logger.Info()
 	logger.Info("Port forwarding started for profile:", profile)
@@ -96,29 +99,38 @@ func main() {
 	killAllPortMappings(procs)
 }
 
-func printStatus(p config.Profile, procs []proc.RestartableProcess) {
+func printStatus(p config.Profile, procs []*proc.RestartableProcess) {
 	for index, entry := range p.Configuration.Entries {
 		logger.Info(entry.ServiceName, " : ", entry.LocalPort, " : ", Statuses[procs[index].Running])
 	}
 }
 
-func killAllPortMappings(procs []proc.RestartableProcess) {
+func killAllPortMappings(procs []*proc.RestartableProcess) {
 	for _, proc := range procs {
 		proc.SendSigTerm()
 	}
 }
 
-func startAllPortMappings(profile config.Profile) []proc.RestartableProcess {
+func startAllPortMappings(profile config.Profile) []*proc.RestartableProcess {
 	config := profile.Configuration
-	procs := make([]proc.RestartableProcess, len(config.Entries))
+	procCount := len(config.Entries)
+	procs := make([]*proc.RestartableProcess, procCount)
+
+	var wg sync.WaitGroup
+	wg.Add(len(procs))
+
 	for index, entry := range config.Entries {
 		arguments := []string{"-n", config.Namespace, "port-forward", entry.ServiceName,
 			fmt.Sprint(entry.LocalPort, ":", entry.ServicePort)}
-		procs[index] = proc.RestartableProcess{Command: "kubectl", Arguments: arguments, OnRestarted: func ()  {
+		procs[index] = proc.Create("kubectl", arguments, func() {
+			wg.Done()
+		}, func() {
 			printStatus(profile, procs)
-		}}
+		})
 		procs[index].Start()
 	}
+
+	wg.Wait()
 	return procs
 }
 

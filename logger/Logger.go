@@ -1,8 +1,15 @@
 package logger
 
-import "log"
+import (
+	"log"
+)
 
 var DEBUG bool = false
+
+func Init(verbose bool) {
+	DEBUG = verbose
+	log.SetFlags(log.Flags() &^ (log.Ldate | log.Ltime))
+}
 
 func Info(message ...any) {
 	log.Println(append([]any{"info:"}, message...)...)
