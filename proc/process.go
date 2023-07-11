@@ -96,6 +96,7 @@ func (p *RestartableProcess) Start() error {
 			}
 			// This means we had a connection, but after a while we may lost it, so restart and see.
 			if hasOutput {
+				p.restartCount += 1
 				p.Restart()
 			} else {
 				if p.restartCount <= MAX_RETRIES {
