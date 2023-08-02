@@ -10,6 +10,7 @@ import (
 )
 
 const CONNECTION_RETRY_INTERVAL = 30
+const CONNECTION_RETRY_INTERVAL_SHORT = 1
 const MAX_RETRIES = 10
 
 type ProcessCallback func()
@@ -100,8 +101,12 @@ func (p *RestartableProcess) Start() error {
 				p.Restart()
 			} else {
 				if p.restartCount <= MAX_RETRIES {
-					logger.Info("Couldn't connect to kubernetes server, will retry in", CONNECTION_RETRY_INTERVAL, "seconds")
-					time.Sleep(CONNECTION_RETRY_INTERVAL * time.Second)
+					chosenInterval := CONNECTION_RETRY_INTERVAL
+					if(p.restartCount < 5) {
+						chosenInterval = CONNECTION_RETRY_INTERVAL_SHORT
+					}
+					logger.Info("Couldn't connect to kubernetes server, will retry in", chosenInterval, "seconds")
+					time.Sleep(time.Duration(chosenInterval) * time.Second)
 					p.restartCount += 1
 					p.Restart()
 				} else {
