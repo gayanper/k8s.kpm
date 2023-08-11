@@ -11,6 +11,15 @@ machine. This tool expects configured kubectl tool in your machine prior to usin
 
 Note: More information will be added how to compile on different platforms later.
 
+## Features
+
+- Define different port mapping configurations as defined under [First time use](#first-time-use).
+- Supports command auto completions.
+- Start port mapping for several services on a namespace with a single command.
+- When pods get restarts, resume the port forwarding by retrying for 10 times before giving up.
+  - The first 5 retries are done with 1 second delay.
+  - The rest of the 5 retries are done with 30 seconds delay.
+
 ## Usage
 
 | Flag              | Description                       |
